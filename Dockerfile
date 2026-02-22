@@ -40,7 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar seus scripts
 COPY pegakp.py .
-COPY alternativaselenium.py .
+COPY altarnativaselenium.py .
 
 # Rodar o script principal
 CMD ["python", "pegakp.py"]
