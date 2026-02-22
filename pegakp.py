@@ -3,41 +3,80 @@ from bs4 import BeautifulSoup
 import requests
 import re
 from datetime import datetime, timedelta
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import altarnativaselenium
 
 app = Flask(__name__)
 
 
-def formatar_previsao(indicadores):
-    hoje = datetime.today()
-    resultado = []
+def retornatabela():
 
-    dias_semana = [
-        "segunda-feira",
-        "terça-feira",
-        "quarta-feira",
-        "quinta-feira",
-        "sexta-feira",
-        "sábado",
-        "domingo"
-    ]
+    url = "https://services.swpc.noaa.gov/text/3-day-forecast.txt"
+    response = requests.get(url)
 
-    for i in range(3):
-        data = hoje + timedelta(days=i)
-        dia_semana = dias_semana[data.weekday()]
-        data_formatada = data.strftime('%d/%m/%Y')
+    if response.status_code != 200:
+        return jsonify({"erro": "Falha ao obter dados"}), 500
 
-        minimo = indicadores[i*2]
-        maximo = indicadores[i*2 + 1]
+    texto = response.text
 
-        if i == 0:
-            texto = f"Previsão de hoje {dia_semana} {data_formatada} é de mínima de {minimo} e máxima {maximo}"
-        elif i == 1:
-            texto = f"Previsão de amanhã {dia_semana} {data_formatada} é de mínima de {minimo} e máxima de {maximo}"
-        else:
-            texto = f"Previsão de {dia_semana} {data_formatada} é de mínima de {minimo} e máxima {maximo}"
+    # 🔎 1️⃣ Extrair somente a parte da tabela
+    inicio = texto.find("NOAA Kp index breakdown")
+    fim = texto.find("Rationale:", inicio)
 
-        resultado.append(texto)
+    bloco = texto[inicio:fim]
+
+    linhas = bloco.splitlines()
+
+    # Remove título e linhas vazias
+    linhas = [l for l in linhas if l.strip()]
+    linhas = linhas[1:]  # remove linha do título
+
+    # 🔄 2️⃣ Traduzir meses
+    meses = {
+        "Jan": "Jan",
+        "Feb": "Fev",
+        "Mar": "Mar",
+        "Apr": "Abr",
+        "May": "Mai",
+        "Jun": "Jun",
+        "Jul": "Jul",
+        "Aug": "Ago",
+        "Sep": "Set",
+        "Oct": "Out",
+        "Nov": "Nov",
+        "Dec": "Dez"
+    }
+
+    linha_datas = linhas[0]
+
+    for en, pt in meses.items():
+        linha_datas = linha_datas.replace(en, pt)
+
+    linhas[0] = linha_datas
+
+    # 🔥 3️⃣ Destacar valores > 3.0
+    def destacar(match):
+        valor = match.group()
+        numero = float(re.findall(r"\d+\.\d+", valor)[0])
+        if numero > 3.0:
+            return f"*{valor}*"
+        return valor
+
+    linhas_formatadas = []
+
+    for linha in linhas:
+        nova_linha = re.sub(
+            r"\d+\.\d+(?:\s*\(G\d\))?",
+            destacar,
+            linha
+        )
+        linhas_formatadas.append(nova_linha.strip())
+
+    # 🔗 4️⃣ Transformar em string única mantendo espaçamento
+    resultado = " ".join(linhas_formatadas)
 
     return resultado
 
@@ -45,21 +84,7 @@ def formatar_previsao(indicadores):
 @app.route("/kp", methods=["GET"])
 def pegar_kp():
 
-    urlkpprevisao = 'https://www.spaceweatherlive.com/'
-    urlkpmedidonodia = 'https://www.spaceweatherlive.com/en/auroral-activity/kp-index.html'
-
-    pageprevisao = requests.get(urlkpprevisao)
-    pageleitura = requests.get(urlkpmedidonodia)
-
-    soup = BeautifulSoup(pageprevisao.text, 'html.parser')
-
-    indicadores = [
-        span.text
-        for span in soup.select('td.text-center span')
-        if re.match(r'^Kp\d[+-]?$', span.text)
-    ]
-
-    arrayprevisao = formatar_previsao(indicadores)
+    arrayprevisao = retornatabela()
 
     # Pegando lista via selenium
     listaleitura = altarnativaselenium.retornalista()
